@@ -5,9 +5,18 @@ import matplotlib.pyplot as plt
 
 
 class Robot:
-    def __init__(self, DH_notations):
+    def __init__(self):
+        self.episode_length = 100
         self.links = []
-        self.update_robot_shape(DH_notations)
+        self.goal = self.get_random_goal()
+
+        self.DH_notations = np.array([[0, -np.pi/2, 1, 0],
+                            [0, 0, 0, 1],
+                            [0, 0, 0, 1],
+                            [0, 0, 0, 1]])
+
+        self.update_robot_shape()
+        self.tick = 0
 
 
     def create_link(self, DH_notation):
@@ -18,10 +27,24 @@ class Robot:
                         [0, 0, 0, 1]])
         return A_n
 
-    def update_robot_shape(self, DH_notations):
+    def update_robot_shape(self):
         self.links = []
-        for DH_notation in DH_notations:
+        for DH_notation in self.DH_notations:
             self.links.append(self.create_link(DH_notation))
+
+    def move_to(self, angles):
+        angles = np.array(angles).reshape((1, 4))
+        self.DH_notations = self.DH_notations[:, -3:]
+        self.DH_notations = np.concatenate((angles.T, self.DH_notations), axis=1)
+        self.update_robot_shape()
+
+    def take_action(self, angle_differences):
+        angle_differences = np.array(angle_differences).reshape((1, 4))
+        current_angles = self.DH_notations[:, 0]
+        new_angles = current_angles + angle_differences
+        self.DH_notations = self.DH_notations[:, -3:]
+        self.DH_notations = np.concatenate((new_angles.T, self.DH_notations), axis=1)
+        self.update_robot_shape()
 
     def get_robot_position(self):
         link1 = self.links[0]
@@ -52,22 +75,55 @@ class Robot:
         joint_positions = self.get_robot_position()
         stacked_joints = [joint['xyz'] for joint in joint_positions]
         stacked_joints = np.concatenate(([[0, 0, 0]], stacked_joints))
-        print(stacked_joints)
         ax.plot(stacked_joints[:, 0], stacked_joints[:, 1], stacked_joints[:, 2])
         plt.show()
 
-DH_notations = [[0, -np.pi/2, 1, 0],
-                [0, 0, 0, 1],
-                [0, 0, 0, 1],
-                [0, 0, 0, 1]]
+    def get_random_goal(self):
+        x, y, z = np.random.uniform(high=4, size=3)
+        return np.array([x, y, z])
 
-robot = Robot(DH_notations)
+    def get_reward(self):
+        x, y, z = self.get_robot_position()[-1]['xyz']
+        xg, yg, zg = self.goal
+        reward = -np.sqrt((x-xg)**2 + (y-yg)**2 + (z-zg)**2)
+        return reward
+
+    def flatten_state(self, joints):
+        state = np.array([[joint['xyz'], joint['angle']] for joint in joints])
+        state = np.append(state, self.goal)
+        state = state.flatten()
+        return state
+
+    def reset(self):
+        self.tick = 0
+        self.goal = self.get_random_goal()
+        random_angles = np.random.uniform(0, np.pi*2, 4)
+        self.move_to(random_angles)
+        state = self.get_robot_position()
+        return self.flatten_state(state)
+
+    def step(self, action):
+        self.take_action(action)
+        state = self.flatten_state(self.get_robot_position())
+        reward = self.get_reward()
+        done = self.tick > self.episode_length
+        self.tick += 1
+        return [state, reward, done]
+
+robot = Robot()
+print(robot.get_reward())
+robot.plot()
+robot.step([0.1, 0.1, 0.1, 0.1])
+print(robot.get_reward())
+
+robot.step([0.1, 0.1, 0.1, 0.1])
+print(robot.get_reward())
+
+robot.step([0.1, 0.1, 0.1, 0.1])
+print(robot.get_reward())
+
+robot.step([0.1, 0.1, 0.1, 0.1])
+print(robot.get_reward())
 robot.plot()
 
-DH_notations = [[np.pi, -np.pi/2, 1, 0],
-                [0.12, 0, 0, 1],
-                [0.12, 0, 0, 1],
-                [0.12, 0, 0, 1]]
 
-robot.update_robot_shape(DH_notations)
-robot.plot()

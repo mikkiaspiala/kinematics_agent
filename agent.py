@@ -58,7 +58,9 @@ class Agent(object):
         discounted_rewards -= torch.mean(discounted_rewards)
         discounted_rewards /= torch.std(discounted_rewards)
 
-        weighted_probs = -action_probs * discounted_rewards
+
+#        weighted_probs = torch.tensor([-action * reward for action in action_probs for reward in discounted_rewards])
+        weighted_probs = -action_probs * discounted_rewards[:, None]
         loss = torch.mean(weighted_probs)
         loss.backward()
 
