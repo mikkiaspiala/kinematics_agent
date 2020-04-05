@@ -79,13 +79,13 @@ class Robot:
         plt.show()
 
     def get_random_goal(self):
-        x, y, z = np.random.uniform(high=4, size=3)
+        x, y, z = np.random.uniform(high=3, size=3)
         return np.array([x, y, z])
 
     def get_reward(self):
         x, y, z = self.get_robot_position()[-1]['xyz']
         xg, yg, zg = self.goal
-        reward = -np.sqrt((x-xg)**2 + (y-yg)**2 + (z-zg)**2)
+        reward = 6-np.sqrt((x-xg)**2 + (y-yg)**2 + (z-zg)**2)
         return reward
 
     def flatten_state(self, joints):
@@ -109,21 +109,4 @@ class Robot:
         done = self.tick > self.episode_length
         self.tick += 1
         return [state, reward, done]
-
-robot = Robot()
-print(robot.get_reward())
-robot.plot()
-robot.step([0.1, 0.1, 0.1, 0.1])
-print(robot.get_reward())
-
-robot.step([0.1, 0.1, 0.1, 0.1])
-print(robot.get_reward())
-
-robot.step([0.1, 0.1, 0.1, 0.1])
-print(robot.get_reward())
-
-robot.step([0.1, 0.1, 0.1, 0.1])
-print(robot.get_reward())
-robot.plot()
-
 

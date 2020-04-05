@@ -115,13 +115,15 @@ def test(env_name, episodes, params, render):
             test_reward += reward
             test_len += 1
     print("Average test reward:", test_reward/episodes, "episode length:", test_len/episodes)
+    print("Episode goal: ", env.goal, "Tool position:", env.get_robot_position()[-1]['xyz'])
+    env.plot()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--test", "-t", type=str, default=None, help="Model to be tested")
     parser.add_argument("--env", type=str, default="ContinuousCartPole-v0", help="Environment to use")
-    parser.add_argument("--train_episodes", type=int, default=5000, help="Number of episodes to train for")
+    parser.add_argument("--train_episodes", type=int, default=10000, help="Number of episodes to train for")
     parser.add_argument("--render_test", action='store_true', help="Render test")
     args = parser.parse_args()
 

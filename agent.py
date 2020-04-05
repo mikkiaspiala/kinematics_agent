@@ -10,8 +10,10 @@ class Policy(torch.nn.Module):
         self.state_space = state_space
         self.action_space = action_space
         self.hidden = 64
-        self.fc1 = torch.nn.Linear(state_space, self.hidden)
-        self.fc2_mean = torch.nn.Linear(self.hidden, action_space)
+        self.fc1 = torch.nn.Linear(state_space, 64)
+        self.fc2 = torch.nn.Linear(64, 100)
+        self.fc3 = torch.nn.Linear(100, 64)
+        self.fc4_mean = torch.nn.Linear(64, action_space)
         self.sigma = torch.nn.Parameter(torch.tensor([10.0]))
         self.init_weights()
         self.optimizer = torch.optim.Adam(self.parameters(), lr=1e-2)
@@ -28,10 +30,11 @@ class Policy(torch.nn.Module):
                 torch.nn.init.zeros_(m.bias)
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = F.relu(x)
-        mu = self.fc2_mean(x)
-        sigma = self.sigma 
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        mu = self.fc4_mean(x)
+        sigma = self.sigma
         output = Normal(mu, sigma)
         return output
 
@@ -60,7 +63,11 @@ class Agent(object):
 
 
 #        weighted_probs = torch.tensor([-action * reward for action in action_probs for reward in discounted_rewards])
-        weighted_probs = -action_probs * discounted_rewards[:, None]
+#        weighted_probs = -action_probs * discounted_rewards[:, None]
+#        print(action_probs.shape)
+#        print(discounted_rewards.shape)
+#        weighted_probs = -action_probs * discounted_rewards
+        weighted_probs = -action_probs * discounted_rewards.reshape((-1, 1))
         loss = torch.mean(weighted_probs)
         loss.backward()
 
@@ -73,7 +80,8 @@ class Agent(object):
         x = torch.from_numpy(observation).float().to(self.train_device)
         aprob = self.policy.forward(x)
         if evaluation:
-            action = torch.argmax(aprob)
+#            action = torch.argmax(aprob.mean)
+            action = aprob.mean
         else:
             action = aprob.sample()
         act_log_prob = aprob.log_prob(action)
