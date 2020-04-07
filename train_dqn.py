@@ -5,13 +5,16 @@ import matplotlib.pyplot as plt
 
 
 
-def train(glie=200, episodes=5000, gamma=0.98, epsilon=0.05, memory_size=10000, batch_size=32):
+def train(glie=500, episodes=50000, gamma=0.98, epsilon=0.05, memory_size=10, batch_size=4):
     env = simulator.Robot()
-    state_space = 4*3+4*3+3
-    action_space = 4
+    n_actions = 81
+    state_space = 6
     movements = [-0.01, 0, 0.01]
-    agent = dqn_agent.Agent(state_space, action_space, gamma, epsilon, batch_size, memory_size, movements)
+    TARGET_UPDATE = 20
+    hidden = 12
+    agent = dqn_agent.Agent(state_space, n_actions)
     overall_cumulative_rewards = []
+
 
     for episode in range(episodes):
         state = env.reset()
@@ -20,22 +23,25 @@ def train(glie=200, episodes=5000, gamma=0.98, epsilon=0.05, memory_size=10000, 
         epsilon = glie/(glie+episode)
 
         while not done:
-            action = agent.get_action(state)
+            action = agent.get_action(state, epsilon)
             next_state, reward, done = env.step(action)
             cumulative_reward += reward
-            experience = {}
-            experience['state'] = state
-            experience['action'] = action
-            experience['next_state'] = next_state
-            experience['reward'] = reward
-            experience['done'] = done
-            agent.memory.push(experience)
+            agent.store_transition(state, action, next_state, reward, done)
             agent.update_network()
             state = next_state
 
         overall_cumulative_rewards.append(cumulative_reward)
         print("Episode: ", episode, " finished. Cumulative reward: ", cumulative_reward)
         plot_rewards(overall_cumulative_rewards)
+
+        if episode % 10 == 0:
+            print("Episode goal: ", env.goal, " Final position: ", env.get_robot_position()[-1]['xyz'])
+        if episode % TARGET_UPDATE == 0:
+            agent.update_target_network()
+
+        if episode % 1000 == 0:
+            torch.save(agent.policy_net.state_dict(),
+                       "weights_%s_%d.mdl" % ("kinematics_agent", episode))
 
     print('Episodes complete.')
     plt.ioff()

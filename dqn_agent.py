@@ -1,102 +1,106 @@
-import torch
-import itertools
-import torch.nn.functional as F
-import torch.nn as nn
-from torch.distributions import Normal
 import numpy as np
-from utils import discount_rewards
+import itertools
+from collections import namedtuple
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+import random
+from utils import Transition, ReplayMemory
+
 
 class DQN(nn.Module):
     def __init__(self, state_space_dim, action_space_dim, hidden=12):
         super(DQN, self).__init__()
         self.hidden = hidden
-        self.fc1 = nn.Linear(state_space_dim, hidden)
-        self.fc2 = nn.Linear(hidden, action_space_dim)
+        self.fc1 = nn.Linear(state_space_dim, 50)
+        self.fc2 = nn.Linear(50, 100)
+        self.fc3 = nn.Linear(100, 200)
+        self.fc4 = nn.Linear(200, action_space_dim)
 
     def forward(self, x):
         x = self.fc1(x)
         x = F.relu(x)
+
         x = self.fc2(x)
+        x = F.relu(x)
+
+        x = self.fc3(x)
+        x = F.relu(x)
+
+        x = self.fc4(x)
         return x
 
 
-class Memory:
-    def __init__(self, batch_size=100, memory_size=1000):
-        self.data = []
+class Agent(object):
+    def __init__(self, state_space, n_actions, replay_buffer_size=50000,
+                 batch_size=32, hidden_size=64, gamma=0.98):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print("Using: ", self.device)
+        self.state_space_dim = state_space
+        self.n_actions = n_actions
+        self.policy_net = DQN(state_space, self.n_actions, hidden_size).to(self.device)
+        self.target_net = DQN(state_space, self.n_actions, hidden_size).to(self.device)
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.target_net.eval()
+        self.optimizer = optim.RMSprop(self.policy_net.parameters(), lr=1e-3)
+        self.memory = ReplayMemory(replay_buffer_size)
         self.batch_size = batch_size
-        self.memory_size = memory_size
+        self.gamma = gamma
 
-    def push(self, experience):
-        self.data.append(experience)
-        self.forget_if_full()
+    def update_network(self, updates=1):
+        for _ in range(updates):
+            self._do_network_update()
 
-    def sample_batch(self):
-        if len(self.data) < self.batch_size:
-            return self.data
-        else:
-            sample_batch = np.random.choice(self.data, size=self.batch_size)
-            return sample_batch
+    def _do_network_update(self):
+        if len(self.memory) < self.batch_size:
+            return
+        transitions = self.memory.sample(self.batch_size)
+        batch = Transition(*zip(*transitions))
 
-    def forget_if_full(self):
-        if len(self.data) > self.memory_size:
-            self.data.pop(0)
+        non_final_mask = 1-torch.tensor(batch.done, dtype=torch.uint8)
+        non_final_next_states = [s for nonfinal,s in zip(non_final_mask,
+                                     batch.next_state) if nonfinal > 0]
+        non_final_next_states = torch.stack(non_final_next_states).to(self.device)
+        state_batch = torch.stack(batch.state).to(self.device)
+        action_batch = torch.cat(batch.action).to(self.device)
+        reward_batch = torch.cat(batch.reward).to(self.device)
 
+        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
 
-class Agent():
-    def __init__(self, state_space, action_space, gamma, epsilon, batch_size, memory_size, movements):
-        # Hyperparameters.
-        self.gamma = gamma#0.98
-        self.epsilon = epsilon#0.05
-        self.batch_size = batch_size#100
-        self.movements = movements#[-0.01, 0, 0.01]
+        next_state_values = torch.zeros(self.batch_size)
+        next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0].cpu().detach()
 
-        self.train_device = "cpu"
-        self.action_space = action_space
-        self.state_space = state_space
-        self.policy_network = DQN(state_space, 81).double()
-        self.target_network = DQN(state_space, action_space).double()
-        self.memory = Memory(batch_size=self.batch_size)
-        self.actions = self.get_all_possible_actions()
-        self.optimizer = torch.optim.RMSprop(self.policy_network.parameters(), lr=5e-3)
+        expected_state_action_values = reward_batch + self.gamma*next_state_values.to(self.device)
 
-    def get_all_possible_actions(self):
-        actions = [list(i) for i in itertools.product(self.movements, repeat=self.action_space)]
-        return actions
+        loss = F.smooth_l1_loss(state_action_values.squeeze().to(self.device),
+                                expected_state_action_values.to(self.device))
 
-    def get_action(self, state):
-        if np.random.uniform() > self.epsilon:
-            state = torch.tensor(state)
-            qs = self.policy_network.forward(state)
-            action_id = np.argmax(qs.detach().numpy())
-            action = self.map_id_to_action(action_id)
-        else:
-            action_id = np.random.randint(self.action_space+1)
-            action = self.actions[action_id]
-        return action
-
-    def update_network(self):
-        samples = self.memory.sample_batch()
-        actions = [sample['action'] for sample in samples]
-        rewards = [sample['reward'] for sample in samples]
-        states = torch.tensor([sample['state'] for sample in samples])
-        dones = [sample['done'] for sample in samples]
-        next_states = torch.tensor([sample['next_state'] for sample in samples])
-        next_qs = [max(self.policy_network.forward(next_state)) for next_state in next_states]
-        targets = torch.tensor([rewards[i] + self.gamma*next_qs[i] if not dones[i] else rewards[i] for i in range(len(samples))])
-        predicted_qs = [max(self.policy_network.forward(state)) for state in states]
-        predicted_qs = torch.stack(predicted_qs)
-#        print(predicted_qs.shape)
-#        print(targets.shape)
-        loss = F.smooth_l1_loss(predicted_qs, targets)
         self.optimizer.zero_grad()
         loss.backward()
+        for param in self.policy_net.parameters():
+            param.grad.data.clamp_(-1e-1, 1e-1)
         self.optimizer.step()
-#        self.target_network = self.policy_network
 
-    def map_id_to_action(self, action_id):
-        action_id = np.argmax(action_id)
-        action = self.actions[action_id]
-        return action
+    def get_action(self, state, epsilon=0.05):
+        sample = random.random()
+        if sample > epsilon:
+            with torch.no_grad():
+                state = torch.from_numpy(state).float()
+                q_values = self.policy_net(state.to(self.device))
+                action = torch.argmax(q_values).item()
+                return action
+        else:
+            action = random.randrange(self.n_actions)
+            return action
 
+    def update_target_network(self):
+        self.target_net.load_state_dict(self.policy_net.state_dict())
 
+    def store_transition(self, state, action, next_state, reward, done):
+        action = torch.Tensor([[action]]).long()
+        reward = torch.tensor([reward], dtype=torch.float32)
+        next_state = torch.from_numpy(next_state).float()
+        state = torch.from_numpy(state).float()
+        self.memory.push(state, action, next_state, reward, done)
 
