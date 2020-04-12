@@ -1,12 +1,15 @@
 import numpy as np
+import itertools
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 
 
 class Robot:
     def __init__(self):
-        self.episode_length = 100
+        self.movements = [-0.05, 0, 0.05]
+        self.episode_length = 200
         self.links = []
         self.goal = self.get_random_goal()
 
@@ -17,7 +20,23 @@ class Robot:
 
         self.update_robot_shape()
         self.tick = 0
+        self.actions = self.get_all_possible_actions()
 
+        plt_thing = plt.figure()
+        map_ax = Axes3D(plt_thing)
+        map_ax.autoscale(enable=False)
+        map_ax.set_xlim3d([-4, 4])
+        map_ax.set_ylim3d([-4, 4])
+        map_ax.set_zlim3d([-4, 4])
+        self.map_ax = map_ax
+
+    def get_all_possible_actions(self):
+        actions = [list(i) for i in itertools.product(self.movements, repeat=len(self.DH_notations))]
+        return actions
+
+    def map_id_to_action(self, action_id):
+        action = self.actions[action_id]
+        return action
 
     def create_link(self, DH_notation):
         theta, alpha, d, r = DH_notation
@@ -70,22 +89,38 @@ class Robot:
         return position
 
     def plot(self):
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
         joint_positions = self.get_robot_position()
         stacked_joints = [joint['xyz'] for joint in joint_positions]
         stacked_joints = np.concatenate(([[0, 0, 0]], stacked_joints))
-        ax.plot(stacked_joints[:, 0], stacked_joints[:, 1], stacked_joints[:, 2])
-        plt.show()
+        self.map_ax.plot(stacked_joints[:, 0], stacked_joints[:, 1], stacked_joints[:, 2])
+        self.map_ax.plot([self.goal[0]], [self.goal[1]], [self.goal[2]], marker='o', markersize=5)
+        plt.draw()
+        plt.pause(0.001)
+        self.map_ax.clear()
+        self.map_ax.set_xlim3d([-4, 4])
+        self.map_ax.set_ylim3d([-4, 4])
+        self.map_ax.set_zlim3d([-4, 4])
 
     def get_random_goal(self):
         x, y, z = np.random.uniform(high=3, size=3)
+        x, y, x = 2, 2, 2
         return np.array([x, y, z])
 
     def get_reward(self):
         x, y, z = self.get_robot_position()[-1]['xyz']
         xg, yg, zg = self.goal
-        reward = 6-np.sqrt((x-xg)**2 + (y-yg)**2 + (z-zg)**2)
+        distance = np.sqrt((x-xg)**2 + (y-yg)**2 + (z-zg)**2)
+        reward = -distance
+        return reward
+
+    def compute_reward(self, current_pos, goal_pos, info, threshold=1):
+        x, y, z = current_pos
+        xg, yg, zg = goal_pos
+        distance = np.sqrt((x-xg)**2 + (y-yg)**2 + (z-zg)**2)
+        if distance < threshold:
+            reward = 0
+        else:
+            reward = -1
         return reward
 
     def flatten_state(self, joints):
@@ -99,14 +134,46 @@ class Robot:
         self.goal = self.get_random_goal()
         random_angles = np.random.uniform(0, np.pi*2, 4)
         self.move_to(random_angles)
-        state = self.get_robot_position()
-        return self.flatten_state(state)
+        self.move_to(np.array([0, 0, 0, 0]))
+        state = self.get_robot_position()[-1]['xyz']
+        state = np.append(state, self.goal)
+        return state
 
-    def step(self, action):
+    def get_ddpg_state(self):
+        positions = self.get_robot_position()
+        observation = [position['xyz'] for position in positions]
+        achieved_goal = positions[-1]['xyz']
+        desired_goal = self.goal
+        state = {'observation':observation,
+                 'achieved_goal':achieved_goal,
+                 'desired_goal':desired_goal}
+        return state
+
+    def ddpg_reset(self):
+        self.tick = 0
+        self.goal = self.get_random_goal()
+        random_angles = np.random.uniform(0, np.pi*2, 4)
+        self.move_to(random_angles)
+        state = self.get_ddpg_state()
+        return state
+
+    def step(self, action_id):
+        action = self.map_id_to_action(action_id)
         self.take_action(action)
-        state = self.flatten_state(self.get_robot_position())
+        state = self.get_robot_position()[-1]['xyz']
+        state = np.append(state, self.goal)
         reward = self.get_reward()
         done = self.tick > self.episode_length
         self.tick += 1
         return [state, reward, done]
+
+    def ddpg_step(self, action):
+        self.take_action(action)
+        state = self.get_ddpg_state()
+        current_pos = self.get_robot_position()[-1]['xyz']
+        reward = self.compute_reward(current_pos, self.goal, 0)
+        done = self.tick >= self.episode_length
+        self.tick += 1
+        info = "wat do?"
+        return state, reward, done, info
 

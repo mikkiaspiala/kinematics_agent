@@ -3,9 +3,12 @@ import dqn_agent
 import torch
 import matplotlib.pyplot as plt
 
+def scale(state):
+    state = state/4
+    return state
 
 
-def train(glie=500, episodes=50000, gamma=0.98, epsilon=0.05, memory_size=10, batch_size=4):
+def train(glie=200, episodes=50000, gamma=0.98, epsilon=0.05, memory_size=10, batch_size=4):
     env = simulator.Robot()
     n_actions = 81
     state_space = 6
@@ -23,6 +26,7 @@ def train(glie=500, episodes=50000, gamma=0.98, epsilon=0.05, memory_size=10, ba
         epsilon = glie/(glie+episode)
 
         while not done:
+            env.plot()
             action = agent.get_action(state, epsilon)
             next_state, reward, done = env.step(action)
             cumulative_reward += reward
@@ -31,8 +35,8 @@ def train(glie=500, episodes=50000, gamma=0.98, epsilon=0.05, memory_size=10, ba
             state = next_state
 
         overall_cumulative_rewards.append(cumulative_reward)
-        print("Episode: ", episode, " finished. Cumulative reward: ", cumulative_reward)
-        plot_rewards(overall_cumulative_rewards)
+        print("Episode: ", episode, " finished. Cumulative reward: ", cumulative_reward, "epsilon: ", epsilon)
+        #plot_rewards(overall_cumulative_rewards)
 
         if episode % 10 == 0:
             print("Episode goal: ", env.goal, " Final position: ", env.get_robot_position()[-1]['xyz'])

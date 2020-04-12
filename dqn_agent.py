@@ -13,22 +13,16 @@ class DQN(nn.Module):
     def __init__(self, state_space_dim, action_space_dim, hidden=12):
         super(DQN, self).__init__()
         self.hidden = hidden
-        self.fc1 = nn.Linear(state_space_dim, 50)
-        self.fc2 = nn.Linear(50, 100)
-        self.fc3 = nn.Linear(100, 200)
-        self.fc4 = nn.Linear(200, action_space_dim)
+        self.fc1 = nn.Linear(state_space_dim, 12)
+        self.fc2 = nn.Linear(12, 50)
+        self.fc3 = nn.Linear(50, action_space_dim)
 
     def forward(self, x):
         x = self.fc1(x)
         x = F.relu(x)
-
         x = self.fc2(x)
         x = F.relu(x)
-
         x = self.fc3(x)
-        x = F.relu(x)
-
-        x = self.fc4(x)
         return x
 
 
@@ -48,6 +42,10 @@ class Agent(object):
         self.batch_size = batch_size
         self.gamma = gamma
 
+    def scale_state(self):
+        state = state/4
+        return state
+
     def update_network(self, updates=1):
         for _ in range(updates):
             self._do_network_update()
@@ -61,8 +59,8 @@ class Agent(object):
         non_final_mask = 1-torch.tensor(batch.done, dtype=torch.uint8)
         non_final_next_states = [s for nonfinal,s in zip(non_final_mask,
                                      batch.next_state) if nonfinal > 0]
-        non_final_next_states = torch.stack(non_final_next_states).to(self.device)
-        state_batch = torch.stack(batch.state).to(self.device)
+        non_final_next_states = torch.stack(non_final_next_states).to(self.device)/4
+        state_batch = torch.stack(batch.state).to(self.device)/4
         action_batch = torch.cat(batch.action).to(self.device)
         reward_batch = torch.cat(batch.reward).to(self.device)
 
